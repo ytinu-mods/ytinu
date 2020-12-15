@@ -1,0 +1,26 @@
+[package]
+name = "ytinu"
+version = "0.1.0"
+authors = ["Benedikt Werner <1benediktwerner@gmail.com>"]
+edition = "2018"
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[dependencies]
+alcro = "0.4"
+rust-embed = "5.7"
+rouille = "3.0"
+mime_guess = "2.0"
+simplelog = "0.8"
+log = "0.4"
+serde_json = "1.0"
+reqwest = { version = "0.10", features = ["blocking", "json"] }
+app_dirs = "1.2"
+serde = { version = "1.0", features = ["derive"] }
+semver = { version = "0.11", features = ["serde"] }
+blake2s_simd = "0.5"
+
+# [target.'cfg(windows)'.dependencies]
+# winreg = "0.8"

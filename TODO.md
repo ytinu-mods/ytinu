@@ -1,0 +1,17 @@
+- Auto-detect game location from registry
+  - https://stackoverflow.com/questions/34090258/find-steam-games-folder
+  - https://docs.rs/winreg/0.8.0/winreg/
+- Settings
+  - Dark Mode
+  - Show dev mods
+  - Clear cache
+- About
+  - Show version
+  - Link GitHub and Discord
+- Mods menu
+- Install/uninstall BepInEx
+- Enable/disable BepInEx
+- Install mods
+- Disable mods
+- Update mods
+- Update ytinu
