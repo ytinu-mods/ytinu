@@ -45,7 +45,11 @@ pub fn show_error(msg: &str) {
 }
 
 pub fn data_root() -> Result<PathBuf, app_dirs::AppDirsError> {
-    app_dirs::data_root(app_dirs::AppDataType::UserData).map(|path| path.join("ytinu"))
+    app_dirs::data_root(app_dirs::AppDataType::UserData).and_then(|path| {
+        let path = path.join("ytinu");
+        std::fs::create_dir_all(&path)?;
+        Ok(path)
+    })
 }
 
 pub fn data_root_unwrap() -> PathBuf {
