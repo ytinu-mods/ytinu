@@ -37,7 +37,7 @@
 
     function handleClickSubmit() {
         try {
-            fetch(API_BASE + "api/add_game", {
+            fetch(API_BASE + "add_game", {
                 method: "POST",
                 body: JSON.stringify(install_path),
             })
