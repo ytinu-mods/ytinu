@@ -7,13 +7,30 @@ use std::{
 
 use alcro::dialog::{self, MessageBoxIcon, YesNo};
 use rouille::{RequestBody, Response};
+use semver::Version;
 use serde::de::DeserializeOwned;
 
 use crate::data::*;
 
-pub const METADATA_URL: &str = "https://raw.githubusercontent.com/ytinu-mods/meta/master/meta.json";
-pub const GAME_MODS_URL_BASE: &str =
+pub static METADATA_URL: &str =
+    "https://raw.githubusercontent.com/ytinu-mods/meta/master/meta.json";
+pub static GAME_MODS_URL_BASE: &str =
     "https://raw.githubusercontent.com/ytinu-mods/meta/master/games/";
+
+#[cfg(unix)]
+pub static BEP_IN_EX_DOWNLOAD_URL: &str =
+    "https://github.com/BepInEx/BepInEx/releases/download/v5.4.4/BepInEx_unix_5.4.4.0.zip";
+#[cfg(windows)]
+pub static BEP_IN_EX_DOWNLOAD_URL: &str =
+    "https://github.com/BepInEx/BepInEx/releases/download/v5.4.4/BepInEx_x64_5.4.4.0.zip";
+pub static BEP_IN_EX_FILE_NAME: &str = "BepInEx_v5.4.4.0.zip";
+pub static BEP_IN_EX_VERSION: Version = Version {
+    major: 5,
+    minor: 4,
+    patch: 4,
+    build: Vec::new(),
+    pre: Vec::new(),
+};
 
 pub struct App {
     data_path: PathBuf,
@@ -26,7 +43,7 @@ impl App {
         let data_path = crate::data_root_unwrap().join("data.json");
         log::info!("Using data file at: '{}'", data_path.to_string_lossy());
 
-        let mut state: State = File::open(&data_path)
+        let state: State = File::open(&data_path)
             .map(|path| {
                 serde_json::from_reader(path).unwrap_or_else(|e| {
                     log::error!("Failed to parse data.json: {}", e);
@@ -41,8 +58,6 @@ impl App {
                 }
                 Default::default()
             });
-        
-        state.select_game();
 
         let metadata = fetch_metadata();
         let mut app = App {
@@ -51,8 +66,8 @@ impl App {
             state,
         };
 
+        app.try_ensure_game_selected();
         app.show_messages();
-        app.fetch_game_metadata();
         app.store_state();
 
         Arc::new(Mutex::new(app))
@@ -75,7 +90,10 @@ impl App {
             }))),
             "browse_directory" => Ok(Response::json(&alcro::dialog::select_folder_dialog(
                 "Browse directory",
-                "",
+                self.state
+                    .current_game()
+                    .map(|g| g.install_path.as_str())
+                    .unwrap_or(""),
             ))),
             "update_install_path" => self
                 .update_install_path(parse_request_body(body)?)
@@ -87,8 +105,69 @@ impl App {
             "metadata" => Ok(Response::json(
                 &self.metadata.as_ref().map(MetadataOut::new),
             )),
-            _ => Err(format!("Invalid API endpoint: {}", path)),
+            "toggle_modloader_installed" => {
+                self.state
+                    .current_game_mut()
+                    .map(SetupGame::toggle_modloader_installed);
+                self.store_state();
+                Ok(Response::empty_204())
+            }
+            "toggle_modloader_enabled" => {
+                self.state
+                    .current_game_mut()
+                    .map(SetupGame::toggle_modloader_enabled);
+                self.store_state();
+                Ok(Response::empty_204())
+            }
+            _ => {
+                if let Some(dir) = path.strip_prefix("open/") {
+                    self.state.open_dir(dir);
+                    Ok(Response::empty_204())
+                } else if let Some(mod_id) = path.strip_prefix("install_mod/") {
+                    if let Some(m) = self.get_mod(mod_id) {
+                        let m = m.clone();
+                        if let Some(game) = self.state.current_game_mut() {
+                            game.install_mod(m);
+                            self.store_state();
+                        } else {
+                            crate::show_error("No game set up or selected");
+                        }
+                    } else {
+                        crate::show_error(&format!("No mod with id '{}' found", mod_id));
+                    }
+                    Ok(Response::empty_204())
+                } else if let Some(mod_id) = path.strip_prefix("remove_mod/") {
+                    if let Some(game) = self.state.current_game_mut() {
+                        game.remove_mod(mod_id);
+                        self.store_state();
+                    } else {
+                        crate::show_error("No game set up or selected");
+                    }
+                    Ok(Response::empty_204())
+                } else if let Some(mod_id) = path.strip_prefix("update_mod/") {
+                    if let Some(game) = self.state.current_game_mut() {
+                        game.update_mod(mod_id);
+                        self.store_state();
+                    } else {
+                        crate::show_error("No game set up or selected");
+                    }
+                    Ok(Response::empty_204())
+                } else {
+                    Err(format!("Invalid API endpoint: {}", path))
+                }
+            }
         }
+    }
+
+    fn get_mod(&self, id: &str) -> Option<&Mod> {
+        if let Some(m) = self.metadata.as_ref()?.mods.get(id) {
+            return Some(m);
+        }
+        self.metadata
+            .as_ref()?
+            .game_mods
+            .get(self.state.selected_game.as_ref()?)
+            .and_then(|mods| mods.get(id))
     }
 
     fn update_install_path(&mut self, install_path: String) -> Result<(), String> {
@@ -122,14 +201,15 @@ impl App {
                 .games
                 .get("Desperados3")
                 .ok_or("No metadata for the game Desperados3 loaded.")?;
-            let new_game = SetupGame {
+            let mut new_game = SetupGame {
                 game: game.clone(),
                 install_path,
                 mods: HashMap::new(),
                 bep_in_ex: None,
             };
+            new_game.update_modloader_status();
             self.state.games.insert("Desperados3".into(), new_game);
-            self.state.selected_game = Some("Desperados3".into());
+            self.select_game("Desperados3".to_string());
             self.store_state();
             Ok(())
         } else {
@@ -149,7 +229,33 @@ impl App {
         }
     }
 
+    fn try_ensure_game_selected(&mut self) {
+        let selected_game = self
+            .state
+            .selected_game
+            .as_ref()
+            .and_then(|game_id| self.state.games.get(game_id));
+
+        if let Some(selected_game) = selected_game {
+            let id = selected_game.game.id.clone();
+            self.select_game(id);
+        } else if let Some(game_id) = self.state.games.keys().next().cloned() {
+            self.select_game(game_id);
+        }
+    }
+
+    fn select_game(&mut self, id: String) {
+        if let Some(game) = self.state.games.get_mut(&id) {
+            self.state.selected_game = Some(id);
+            game.update_modloader_status();
+            self.fetch_game_metadata();
+        } else {
+            self.state.selected_game = None;
+        }
+    }
+
     fn fetch_game_metadata(&mut self) {
+        log::info!("Fetching game metadata");
         let mut fetch = || {
             let game = self.state.current_game()?;
             let meta = self.metadata.as_mut()?;

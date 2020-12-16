@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { API_BASE } from "../config";
+
     export let onClose: (change: boolean) => void;
     export let install_path: string;
 
@@ -11,7 +13,7 @@
     function handleClickBrowse() {
         error = null;
         try {
-            fetch("http://localhost:5001/api/browse_directory")
+            fetch(API_BASE + "browse_directory")
                 .then((r) => r.json())
                 .then((r) => {
                     if (r !== null) {
@@ -26,7 +28,7 @@
 
     function handleClickSubmit() {
         try {
-            fetch("http://localhost:5001/api/update_install_path", {
+            fetch(API_BASE + "update_install_path", {
                 method: "POST",
                 body: JSON.stringify(install_path),
             })
@@ -47,57 +49,11 @@
 </script>
 
 <style lang="scss">
-    .backdrop {
-        position: fixed;
-        top: 0;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        z-index: 1;
-
-        background-color: rgba(0, 0, 0, 0.4);
-        display: flex;
-        justify-content: center;
+    .install-dir-selection {
+        display: grid;
+        grid-template-columns: auto 1fr 100px;
+        column-gap: 5px;
         align-items: center;
-
-        .dialog-content {
-            width: 700px;
-            background-color: white;
-            border-radius: 3px;
-
-            padding: 0.5em 2em 2em 2em;
-
-            h1 {
-                margin-top: 0.4em;
-            }
-
-            .install-dir-selection {
-                display: grid;
-                grid-template-columns: auto 1fr 100px;
-                column-gap: 5px;
-                align-items: center;
-            }
-
-            .footer {
-                display: flex;
-                flex-direction: row;
-                margin-top: 70px;
-                position: relative;
-
-                button {
-                    padding: 0.5em 1em;
-
-                    &:last-child {
-                        position: absolute;
-                        right: 0;
-                    }
-                }
-            }
-        }
-    }
-
-    .error {
-        color: red;
     }
 </style>
 

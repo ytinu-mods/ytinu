@@ -1,4 +1,4 @@
-// #![windows_subsystem = "windows"]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{fs::File, path::PathBuf};
 
@@ -9,15 +9,15 @@ use simplelog::{
 
 mod app;
 mod data;
-mod utils;
 mod server;
+mod utils;
 
 pub use app::App;
 pub use utils::{data_root, data_root_unwrap, show_error, ErrorExt};
 
 static APP_VERSION: semver::Version = semver::Version {
-    major: 1,
-    minor: 0,
+    major: 0,
+    minor: 1,
     patch: 0,
     build: Vec::new(),
     pre: Vec::new(),
@@ -44,7 +44,7 @@ fn setup_logging() {
     )];
     let mut error = None;
     let log_file = match data_root() {
-        Ok(file) => file,
+        Ok(file) => file.join("ytinu.log"),
         Err(err) => {
             error = Some(err);
             PathBuf::from("ytinu.log")
@@ -72,17 +72,21 @@ fn main() {
     let app = App::start();
     let (server_handle, port) = server::start(app);
 
-    // let ui = UIBuilder::new()
-    //     .content(Content::Url(&format!("http://127.0.0.1:{}/", port)))
-    //     .run()
-    //     .unwrap_or_die("Startup Error on UIBuilder::run");
-
     log::info!("Started server on localhost:{}", port);
 
-    // ui.wait_finish();
+    let no_ui = std::env::args().any(|a| a.as_str() == "--no-ui");
 
-    log::info!("UI closed. Waiting for server to stop...");
+    if no_ui {
+        server_handle.join();
+    } else {
+        let ui = UIBuilder::new()
+            .content(Content::Url(&format!("http://127.0.0.1:{}/", port)))
+            .size(1200, 720)
+            .run()
+            .unwrap_or_die("Startup Error on UIBuilder::run");
 
-    server_handle.join();
-    // server_handle.stop();
+        ui.wait_finish();
+        log::info!("UI closed. Waiting for server to stop...");
+        server_handle.stop();
+    }
 }

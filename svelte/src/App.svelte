@@ -1,19 +1,75 @@
 <script lang="ts">
-	import AddGameDialog from "./AddGameDialog.svelte";
+	import AddGameDialog from "./dialogs/AddGameDialog.svelte";
+	import AboutDialog from "./dialogs/AboutDialog.svelte";
+	import SettingsDialog from "./dialogs/SettingsDialog.svelte";
 	import { API_BASE } from "./config";
-	import ManageGameDialog from "./ManageGameDialog.svelte";
+	import ManageGameDialog from "./dialogs/ManageGameDialog.svelte";
+	import ModEntry from "./ModEntry.svelte";
+	import { fade } from "svelte/transition";
 
 	let version: string = null;
-	let bep_in_ex = null;
 	let games: Map<string, SetupGame> = null;
 	let meta: Metadata = null;
 	let selectedGameId = null;
-	let selectedGame = null;
+	let selectedGame: SetupGame = null;
+	let os = null;
+	let settings: {
+		dark_mode?: "system" | "dark" | "light";
+		show_dev_mods?: boolean;
+	} = {};
+	let installed_mods: InstalledMod[] = [];
+	let recommended_mods: Mod[] = [];
+	let available_mods: Mod[] = [];
+
 	let showAddGameDialog = false;
 	let showManageGameDialog = false;
+	let showAboutDialog = false;
+	let showSettingsDialog = false;
+
+	let expandedMod = null;
 
 	fetchState();
 	fetchMetadata();
+	loadSettings();
+
+	function updateModList() {
+		if (!selectedGame || !meta) return;
+		console.log(installed_mods);
+		console.log(recommended_mods);
+		console.log(available_mods);
+
+		let installed = [];
+		for (const mod of Object.values(selectedGame.mods)) {
+			installed.push(mod);
+		}
+		installed.sort((a, b) => a.m.name.localeCompare(b.m.name));
+		installed_mods = installed;
+
+		let recommended = [];
+		let available = [];
+		for (const mod of Object.values(meta.mods)) {
+			if (selectedGame.mods[mod.id]) continue;
+			if (selectedGame.game.recommended_mods.indexOf(mod.id) >= 0)
+				recommended.push(mod);
+			else available.push(mod);
+		}
+		let game_mods = meta.game_mods[selectedGameId];
+		if (game_mods) {
+			for (const mod of Object.values(game_mods)) {
+				if (selectedGame.mods[mod.id]) continue;
+				if (selectedGame.game.recommended_mods.indexOf(mod.id) >= 0)
+					recommended.push(mod);
+				else available.push(mod);
+			}
+		}
+		available.sort((a, b) => a.name.localeCompare(b.name));
+		recommended.sort((a, b) => a.name.localeCompare(b.name));
+		available_mods = available;
+		recommended_mods = recommended;
+		console.log(installed_mods);
+		console.log(recommended_mods);
+		console.log(available_mods);
+	}
 
 	function fetchState() {
 		fetch(API_BASE + "state")
@@ -25,11 +81,13 @@
 					return;
 				}
 				let state = r as State;
+				console.log(state);
+				os = state.os;
 				version = state.version;
 				games = new Map(Object.entries(state.games));
 				selectedGameId = state.selected_game;
-				selectedGame =
-					selectedGameId == null ? null : games.get(selectedGameId);
+				selectedGame = selectedGameId && games.get(selectedGameId);
+				updateModList();
 			});
 	}
 
@@ -44,236 +102,212 @@
 					console.error(r.error);
 					return;
 				}
-				meta = r;
-				// TODO: meta.update
+				meta = r as Metadata;
+				updateModList();
+				// TODO: Use meta.update
 			});
 	}
 
-	function handleOpenDirectory(directory) {
-		// TODO
+	function loadSettings() {
+		settings = JSON.parse(localStorage.getItem("settings")) || {};
+
+		if (
+			settings?.dark_mode === "dark" ||
+			(settings?.dark_mode !== "light" &&
+				window.matchMedia?.("(prefers-color-scheme: dark)").matches)
+		) {
+			document.documentElement.setAttribute("data-theme", "dark");
+		} else {
+			document.documentElement.setAttribute("data-theme", "light");
+		}
+	}
+
+	function handleClickInstall() {
+		fetch(API_BASE + "toggle_modloader_installed").then(() => fetchState());
+	}
+
+	function handleClickEnable() {
+		fetch(API_BASE + "toggle_modloader_enabled").then(() => fetchState());
+	}
+
+	function installMod(id: string) {
+		fetch(API_BASE + "install_mod/" + id).then(() => fetchState());
+	}
+
+	function updateMod(id: string) {
+		fetch(API_BASE + "update_mod/" + id).then(() => fetchState());
+	}
+
+	// function enableMod(id: string) {
+	// 	fetch(API_BASE + "toggle_mod_enabled/" + id).then(() => fetchState());
+	// }
+
+	function uninstallMod(id: string) {
+		fetch(API_BASE + "remove_mod/" + id).then(() => fetchState());
 	}
 </script>
 
 <style lang="scss">
-	.page-container {
-		height: 100%;
-		display: grid;
-		grid-template-columns: 300px auto;
-		grid-template-rows: 35px auto;
-		grid-template-rows: 35px 70px auto;
-		grid-template-areas:
-			"menubar menubar"
-			"game-selection game-selection"
-			"sidebar main";
-
-		&.no-game {
-			grid-template-columns: auto;
-			grid-template-areas:
-				"menubar"
-				"game-selection"
-				"main";
-
-			.main {
-				display: flex;
-				flex-direction: column;
-				justify-content: center;
-				align-items: center;
-				padding: 1em;
-			}
-		}
-
-		.menubar {
-			grid-area: menubar;
-			background-color: #f0f0f0;
-			display: flex;
-			justify-items: center;
-			padding-left: 5px;
-			border-bottom: 1px solid #ccc;
-
-			button {
-				border: none;
-				padding: 0.4em 0.7em;
-				background-color: transparent;
-
-				&:hover {
-					background-color: #ccc;
-				}
-			}
-		}
-		.game-selection {
-			grid-area: game-selection;
-			padding: 1em;
-
-			&--label {
-				font-size: 1.1em;
-			}
-
-			&--select {
-				margin: 0 0.5em;
-				width: calc(100% - 300px);
-			}
-		}
-		.sidebar {
-			grid-area: sidebar;
-			padding: 1.3em;
-
-			h4 {
-				margin: 0;
-			}
-
-			p {
-				margin: 0.2em 0;
-			}
-
-			.big-buttons {
-				display: flex;
-				flex-direction: column;
-				margin-top: 15px;
-				margin-bottom: 20px;
-
-				button {
-					margin-top: 5px;
-				}
-			}
-
-			.open-directory-buttons {
-				display: flex;
-				flex-direction: column;
-				align-items: center;
-
-				p {
-					margin-bottom: 5px;
-				}
-
-				div {
-					width: 100%;
-					display: flex;
-					flex-direction: row;
-					justify-content: space-between;
-
-					button {
-						width: 80px;
-					}
-				}
-			}
-		}
-		.main {
-			grid-area: main;
-			padding: 1.3em;
-
-			h4 {
-				margin: 0;
-			}
-
-			.not-installed {
-				display: flex;
-				margin-top: 50px;
-				flex-direction: column;
-				align-items: center;
-
-				h2,
-				h3 {
-					margin: 0.5em;
-				}
-			}
-
-			&--no-game {
-				margin-bottom: 30%;
-			}
-		}
+	:global {
+		@import "./global.scss";
 	}
+
+	@import "./App.scss";
 </style>
 
-<div class="page-container" class:no-game={games?.size == 0}>
+<div class="page-container">
 	<div class="menubar">
-		<button type="button">Settings</button>
-		<button type="button">About</button>
-	</div>
-
-	<div class="game-selection">
-		<b class="game-selection--label">Game:</b>
-		<select
-			class="game-selection--select"
-			value={selectedGameId}
-			disabled={games === null || games.size < 2}>
-			{#if games?.size > 0}
-				{#each [...games.values()].sort() as { game: { id, name } }}
-					<option value={id}>{name}</option>
-				{/each}
-			{:else}
-				<option>
-					No game setup. Use the button on the right to add one --&gt;
-				</option>
-			{/if}
-		</select>
-		<button
-			type="button"
-			disabled={games?.size > 0}
-			on:click={() => (showAddGameDialog = true)}>
-			Add Game
+		<button type="button" on:click={() => (showSettingsDialog = true)}>
+			Settings
 		</button>
-		<button
-			type="button"
-			disabled={games === null || games.size == 0}
-			on:click={() => (showManageGameDialog = true)}>Manage Games</button>
+		<button type="button" on:click={() => (showAboutDialog = true)}>
+			About
+		</button>
 	</div>
 
-	{#if games?.size > 0 && selectedGame !== null}
-		<div class="sidebar">
-			<h4>Status</h4>
-			{#if selectedGame.bep_in_ex == null}
-				<p>Mod Loader not installed</p>
-				<p>Use the button below to install it</p>
-			{:else}
-				{#if selectedGame.bep_in_ex.enabled}
-					<p>Mod Loader installed and enabled</p>
+	{#if !version || !meta}
+		<div class="spinner-container" transition:fade>
+			<div class="lds-hourglass" />
+		</div>
+	{:else}
+		<div class="game-selection" transition:fade>
+			<b class="game-selection--label">Game:</b>
+			<select
+				class="game-selection--select"
+				value={selectedGameId}
+				disabled={games === null || games.size < 2}>
+				{#if games?.size > 0}
+					{#each [...games.values()].sort() as { game: { id, name } }}
+						<option value={id}>{name}</option>
+					{/each}
 				{:else}
-					<p>Mod Loader installed but <b>disabled</b></p>
+					<option>
+						No game setup. Use the button on the right to add one
+						--&gt;
+					</option>
 				{/if}
-				<p>BepInEx v{selectedGame.bep_in_ex.version ?? '???'}</p>
-			{/if}
+			</select>
+			<button
+				type="button"
+				disabled={games?.size > 0}
+				on:click={() => (showAddGameDialog = true)}>
+				Add Game
+			</button>
+			<button
+				type="button"
+				disabled={games === null || games.size == 0}
+				on:click={() => (showManageGameDialog = true)}>Manage Games</button>
+		</div>
 
-			<div class="big-buttons">
-				<button
-					type="button"
-					title={'Install the BepInEx Mod Loader for ' + selectedGame.game.name}>
-					{selectedGame.bep_in_ex == null ? 'Install' : 'Uninstall'}
-				</button>
-				<button
-					type="button"
-					disabled={selectedGame.bep_in_ex == null}
-					title={selectedGame.bep_in_ex?.enabled ? 'Enable the BepInEx Mod Loader for' : 'Disable The BepInEx Mod Loader without touching any mods or configuration. This will make the game launch completely cleanly.'}>
-					{selectedGame.bep_in_ex?.enabled ? 'Enable' : 'Disable'}
-				</button>
+		{#if selectedGame}
+			<div class="sidebar" transition:fade>
+				<h4>Status</h4>
+				{#if selectedGame.bep_in_ex == null}
+					<p>Mod Loader not installed</p>
+					<p>Use the button below to install it</p>
+				{:else}
+					{#if selectedGame.bep_in_ex.enabled}
+						<p>Mod Loader installed and enabled</p>
+					{:else}
+						<p>Mod Loader installed but <b>disabled</b></p>
+					{/if}
+					<p>
+						BepInEx
+						{selectedGame.bep_in_ex.version ? 'v' + selectedGame.bep_in_ex.version : '- Unknown Version'}
+					</p>
+				{/if}
+
+				<div class="big-buttons">
+					<button
+						type="button"
+						title={'Install the BepInEx Mod Loader for ' + selectedGame.game.name}
+						on:click={handleClickInstall}>
+						{selectedGame.bep_in_ex == null ? 'Install' : 'Uninstall'}
+					</button>
+					<button
+						type="button"
+						disabled={selectedGame.bep_in_ex == null}
+						title={selectedGame.bep_in_ex?.enabled ? 'Disable The BepInEx Mod Loader without touching any mods or configuration. This will make the game launch completely cleanly.' : 'Enable the BepInEx Mod Loader'}
+						on:click={handleClickEnable}>
+						{selectedGame.bep_in_ex?.enabled ? 'Disable' : 'Enable'}
+					</button>
+				</div>
+
+				{#if os === 'windows'}
+					<div class="open-directory-buttons">
+						<p>Open Directory</p>
+						<div>
+							<button
+								type="button"
+								on:click={() => fetch(API_BASE + 'open/game')}>Game</button>
+							<button
+								type="button"
+								disabled={!selectedGame.bep_in_ex}
+								on:click={() => fetch(API_BASE + 'open/mods')}>Mods</button>
+							<button
+								type="button"
+								disabled={!selectedGame.bep_in_ex}
+								on:click={() => fetch(API_BASE + 'open/configs')}>Configs</button>
+						</div>
+					</div>
+				{/if}
 			</div>
 
-			<!-- <div class="open-directory-buttons">
-				<p>Open Directory</p>
-				<div>
-					<button type="button">Game</button>
-					<button type="button">Mods</button>
-					<button type="button">Configs</button>
-				</div>
-			</div> -->
-		</div>
-	{/if}
-
-	<div class="main">
-		{#if selectedGame}
-			{#if selectedGame.bep_in_ex}
-				<h4>Mods</h4>
-			{:else}
-				<div class="not-installed">
-					<h2>The BepInEx Mod Loader is not installed</h2>
-					<h3>Use the button on the left to install it</h3>
-				</div>
-			{/if}
+			<div class="main" transition:fade>
+				{#if selectedGame.bep_in_ex}
+					<div transition:fade>
+						<h4>
+							Mods
+							<small>(Click on a Mod for more information)</small>
+						</h4>
+						<div class="mod-list">
+							{#if installed_mods.length > 0}
+								<h5>Installed</h5>
+								{#each installed_mods as installed_mod (installed_mod.m.id)}
+									<ModEntry
+										bind:expandedMod
+										onUpdate={updateMod}
+										onUninstall={uninstallMod}
+										{installed_mod} />
+								{/each}
+							{/if}
+							{#if recommended_mods.length > 0}
+								<h5>Recommended</h5>
+								{#each recommended_mods as available_mod (available_mod.id)}
+									{#if !available_mod.dev_mod || settings.show_dev_mods}
+										<ModEntry
+											bind:expandedMod
+											onInstall={installMod}
+											{available_mod} />
+									{/if}
+								{/each}
+							{/if}
+							{#if available_mods.length > 0}
+								<h5>Available</h5>
+								{#each available_mods as available_mod (available_mod.id)}
+									{#if !available_mod.dev_mod || settings.show_dev_mods}
+										<ModEntry
+											bind:expandedMod
+											onInstall={installMod}
+											{available_mod} />
+									{/if}
+								{/each}
+							{/if}
+						</div>
+					</div>
+				{:else}
+					<div class="not-installed" transition:fade>
+						<h2>The BepInEx Mod Loader is not installed</h2>
+						<h3>Use the button on the left to install it</h3>
+					</div>
+				{/if}
+			</div>
 		{:else}
-			<h2 class="main--no-game">
+			<h2 class="main--no-game" transition:fade>
 				No game setup. Use the "Add Game" button above to add one.
 			</h2>
 		{/if}
-	</div>
+	{/if}
 </div>
 
 {#if showManageGameDialog}
@@ -289,6 +323,25 @@
 	<AddGameDialog
 		onClose={(change) => {
 			showAddGameDialog = false;
-			if (change) fetchState();
+			if (change) {
+				fetchMetadata();
+				fetchState();
+			}
+		}} />
+{/if}
+
+{#if showAboutDialog}
+	<AboutDialog
+		{version}
+		onClose={() => {
+			showAboutDialog = false;
+		}} />
+{/if}
+
+{#if showSettingsDialog}
+	<SettingsDialog
+		onClose={() => {
+			showSettingsDialog = false;
+			loadSettings();
 		}} />
 {/if}
