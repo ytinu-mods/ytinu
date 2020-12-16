@@ -248,6 +248,9 @@ impl App {
         if let Some(game) = self.state.games.get_mut(&id) {
             self.state.selected_game = Some(id);
             game.update_modloader_status();
+            if let Some(meta) = &self.metadata {
+                game.update_mods_meta(&meta.mods);
+            }
             self.fetch_game_metadata();
         } else {
             self.state.selected_game = None;
@@ -257,11 +260,12 @@ impl App {
     fn fetch_game_metadata(&mut self) {
         log::info!("Fetching game metadata");
         let mut fetch = || {
-            let game = self.state.current_game()?;
+            let game = self.state.current_game_mut()?;
             let meta = self.metadata.as_mut()?;
             if !meta.game_mods.contains_key(&game.game.id) {
-                meta.game_mods
-                    .insert(game.game.id.clone(), game.game.fetch_mods()?);
+                let game_mods = game.game.fetch_mods()?;
+                game.update_mods_meta(&game_mods);
+                meta.game_mods.insert(game.game.id.clone(), game_mods);
             }
             Some(())
         };

@@ -78,6 +78,14 @@ impl SetupGame {
         self.install_path().join("BepInEx").join("plugins")
     }
 
+    pub fn update_mods_meta(&mut self, new_mods: &HashMap<String, Mod>) {
+        for (id, m) in self.mods.iter_mut() {
+            if let Some(new_m) = new_mods.get(id) {
+                m.m = new_m.clone();
+            }
+        }
+    }
+
     pub fn install_mod(&mut self, m: Mod) {
         if let Err(error) = self.install_mod_impl(m) {
             crate::show_error(&format!("{:#}", error));

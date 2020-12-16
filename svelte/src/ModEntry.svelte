@@ -7,8 +7,8 @@
     // export let onEnable: (id: string) => void = null;
 
     export let expandedMod: string;
-    let mod = available_mod || installed_mod.m;
-    let hasUpdate =
+    $: mod = available_mod || installed_mod.m;
+    $: hasUpdate =
         installed_mod && installed_mod.version !== installed_mod.m.version;
 
     function stopPropagation(event: MouseEvent, func) {
@@ -90,7 +90,9 @@
         checked={installed_mod?.enabled}
         on:change={() => onEnable(mod.id)} /> -->
     <span class="mod-name">{mod.name}</span>
-    <span class="mod-version" class:error={hasUpdate}>v{mod.version}</span>
+    <span
+        class="mod-version"
+        class:error={hasUpdate}>v{installed_mod?.version || mod.version}</span>
     {#if onUpdate}
         <button
             type="button"

@@ -34,10 +34,6 @@
 
 	function updateModList() {
 		if (!selectedGame || !meta) return;
-		console.log(installed_mods);
-		console.log(recommended_mods);
-		console.log(available_mods);
-
 		let installed = [];
 		for (const mod of Object.values(selectedGame.mods)) {
 			installed.push(mod);
@@ -66,9 +62,6 @@
 		recommended.sort((a, b) => a.name.localeCompare(b.name));
 		available_mods = available;
 		recommended_mods = recommended;
-		console.log(installed_mods);
-		console.log(recommended_mods);
-		console.log(available_mods);
 	}
 
 	function fetchState() {
@@ -81,7 +74,6 @@
 					return;
 				}
 				let state = r as State;
-				console.log(state);
 				os = state.os;
 				version = state.version;
 				games = new Map(Object.entries(state.games));
