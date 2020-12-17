@@ -1,9 +1,16 @@
 <script lang="ts">
+    import { API_BASE } from "../config";
+
     export let onClose: () => void;
     export let version: string;
+    export let latest_version: string;
 
     function handleClickBackrdop(event) {
         if (event.target.classList.contains("backdrop")) onClose();
+    }
+
+    function update() {
+        fetch(API_BASE + "update");
     }
 </script>
 
@@ -15,6 +22,14 @@
             ytinu Mod Manager
             {#if version}v{version}{:else}- Unknown Version{/if}
         </p>
+
+        {#if latest_version && latest_version !== version}
+            <p class="error">
+                Update available: Version
+                {latest_version}
+                <button on:click={update}>Update</button>
+            </p>
+        {/if}
 
         <p>using BepInEx v5.4 as Mod Loader</p>
 

@@ -22,7 +22,11 @@
     function handleClickBrowse() {
         error = null;
         try {
-            fetch(API_BASE + "browse_directory")
+            fetch(
+                API_BASE +
+                    "browse_directory?path=" +
+                    encodeURIComponent(loading ? "" : install_path)
+            )
                 .then((r) => r.json())
                 .then((r) => {
                     if (r !== null) {
@@ -43,13 +47,11 @@
             })
                 .then((r) => r.json())
                 .then((r) => {
-                    if (r !== null) {
-                        if (r.error !== undefined) error = r.error;
-                        else if (r === true) onClose(true);
-                        else
-                            error =
-                                "Unexpected response:\n" + JSON.stringify(r);
-                    }
+                    error = null;
+                    if (!r) error = "Empty response";
+                    else if (r.error !== undefined) error = r.error;
+                    else if (r === true) onClose(true);
+                    else error = "Unexpected response:\n" + JSON.stringify(r);
                 });
         } catch (e) {
             error = "Error: " + e;
@@ -77,7 +79,10 @@
                 type="text"
                 disabled={loading}
                 bind:value={install_path} />
-            <button type="button" on:click={handleClickBrowse}>Browse</button>
+            <button
+                type="button"
+                disabled={loading}
+                on:click={handleClickBrowse}>Browse</button>
         </div>
 
         {#if error !== null}

@@ -1,23 +1,28 @@
 <script lang="ts">
-    export let onClose: () => void;
+    import { API_BASE } from "../config";
 
-    let settings = JSON.parse(localStorage.getItem("settings"));
-    let dark_mode = settings?.dark_mode;
-    let show_dev_mods = settings?.show_dev_mods;
+    export let onClose: (change: boolean) => void;
+    export let settings: Config;
+
+    let error = null;
 
     function handleClickBackrdop(event) {
-        if (event.target.classList.contains("backdrop")) onClose();
+        if (event.target.classList.contains("backdrop")) onClose(false);
     }
 
     function save() {
-        localStorage.setItem(
-            "settings",
-            JSON.stringify({
-                dark_mode,
-                show_dev_mods,
-            })
-        );
-        onClose();
+        fetch(API_BASE + "set_config", {
+            method: "POST",
+            body: JSON.stringify(settings),
+        })
+            .then((r) => r.json())
+            .then((r) => {
+                error = null;
+                if (!r) error = "Empty response";
+                else if (r.error !== undefined) error = r.error;
+                else if (r === true) onClose(true);
+                else error = "Unexpected response:\n" + JSON.stringify(r);
+            });
     }
 </script>
 
@@ -45,7 +50,7 @@
         <div class="settings-list">
             <label for="dark-mode">
                 Dark Mode:
-                <select bind:value={dark_mode}>
+                <select bind:value={settings.dark_mode}>
                     <option value="system">System</option>
                     <option value="dark">Dark Mode</option>
                     <option value="light">Light Mode</option>
@@ -57,13 +62,28 @@
                     id="show-dev-mods"
                     name="show-dev-mods"
                     type="checkbox"
-                    bind:checked={show_dev_mods} />
+                    bind:checked={settings.show_dev_mods} />
                 Show dev mods
             </label>
+
+            <label for="check-updates">
+                <input
+                    id="check-updates"
+                    name="check-updates"
+                    type="checkbox"
+                    bind:checked={settings.check_for_updates} />
+                Automatically check for updates
+            </label>
+
+            {#if error !== null}
+                <p class="error">{error}</p>
+            {/if}
         </div>
 
         <div class="footer">
-            <button type="button" on:click={() => onClose()}>Cancel</button>
+            <button
+                type="button"
+                on:click={() => onClose(false)}>Cancel</button>
             <button
                 class="submit"
                 type="button"

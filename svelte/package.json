@@ -1,6 +1,6 @@
 {
   "name": "ytinu",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "scripts": {
     "build": "rollup -c",
     "dev": "HOST= rollup -c -w",

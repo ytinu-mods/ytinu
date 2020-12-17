@@ -13,7 +13,11 @@
     function handleClickBrowse() {
         error = null;
         try {
-            fetch(API_BASE + "browse_directory")
+            fetch(
+                API_BASE +
+                    "browse_directory?path=" +
+                    encodeURIComponent(install_path)
+            )
                 .then((r) => r.json())
                 .then((r) => {
                     if (r !== null) {

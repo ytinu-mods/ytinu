@@ -1,10 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
+    fs::File,
     path::{Path, PathBuf},
 };
 
 use alcro::dialog::{self, MessageBoxIcon, YesNo::*};
 use anyhow::{bail, ensure, Context};
+use app_dirs::AppDataType;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 
@@ -354,6 +356,7 @@ pub struct InstalledMod {
 #[derive(Deserialize, Debug, Clone)]
 pub struct Metadata {
     pub version: semver::Version,
+    pub downloads: HashMap<String, String>,
     pub messages: Vec<Message>,
     pub games: HashMap<String, Game>,
     pub game_mods: HashMap<String, HashMap<String, Mod>>,
@@ -364,6 +367,7 @@ impl From<MetadataIn> for Metadata {
     fn from(meta: MetadataIn) -> Self {
         Self {
             version: meta.version,
+            downloads: meta.downloads,
             messages: meta.messages,
             games: meta.games.into_iter().map(|g| (g.id.clone(), g)).collect(),
             mods: meta.mods.into_iter().map(|m| (m.id.clone(), m)).collect(),
@@ -396,6 +400,7 @@ impl MetadataOut {
 #[derive(Deserialize, Debug, Clone)]
 pub struct MetadataIn {
     version: semver::Version,
+    downloads: HashMap<String, String>,
     messages: Vec<Message>,
     games: Vec<Game>,
     mods: Vec<Mod>,
@@ -505,4 +510,81 @@ impl From<GameMods> for HashMap<String, Mod> {
             .map(|m| (m.id.clone(), m))
             .collect()
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct Config {
+    pub dark_mode: DarkMode,
+    pub show_dev_mods: bool,
+    pub port: u16,
+    pub check_for_updates: bool,
+    pub open_ui: OpenUIConfig,
+}
+
+impl Config {
+    pub fn load() -> Self {
+        match Self::load_impl() {
+            Ok(config) => config,
+            Err(error) => {
+                crate::show_error(&format!("Failed to load config file: {:#}", error));
+                Self::default()
+            }
+        }
+    }
+
+    fn path() -> PathBuf {
+        crate::utils::app_dir(AppDataType::UserConfig)
+            .unwrap_or_die("Startup error: Failed to get config directory")
+            .join("config.json")
+    }
+
+    fn load_impl() -> anyhow::Result<Self> {
+        let path = Config::path();
+        if path.is_file() {
+            let file = File::open(path).context("Failed to open config file")?;
+            serde_json::from_reader(file).context("Failed to deserialize config file")
+        } else {
+            Ok(Self::default())
+        }
+    }
+
+    pub fn store(&self) {
+        if let Err(error) = self.store_impl() {
+            crate::show_error(&format!("Failed to save config file: {:#}", error));
+        }
+    }
+
+    fn store_impl(&self) -> anyhow::Result<()> {
+        let file = File::create(Config::path()).context("Failed to create config file")?;
+        serde_json::to_writer(file, self).context("Failed to serialize config file")
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            dark_mode: DarkMode::System,
+            show_dev_mods: false,
+            port: 0,
+            check_for_updates: true,
+            open_ui: OpenUIConfig::Chromium,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum DarkMode {
+    System,
+    Dark,
+    Light,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum OpenUIConfig {
+    Chromium,
+    Browser,
+    None,
 }

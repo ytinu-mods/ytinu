@@ -1,8 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{fs::File, path::PathBuf};
+use std::{
+    fs::File,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use alcro::{dialog, Content, UIBuilder};
+use app_dirs::AppDataType;
+use data::OpenUIConfig;
+use server::ServerHandle;
 use simplelog::{
     CombinedLogger, Config, LevelFilter, SharedLogger, TermLogger, TerminalMode, WriteLogger,
 };
@@ -13,7 +20,7 @@ mod server;
 mod utils;
 
 pub use app::App;
-pub use utils::{data_root, data_root_unwrap, show_error, ErrorExt};
+pub use utils::{show_error, ErrorExt};
 
 static APP_VERSION: semver::Version = semver::Version {
     major: 0,
@@ -43,7 +50,7 @@ fn setup_logging() {
         TerminalMode::Mixed,
     )];
     let mut error = None;
-    let log_file = match data_root() {
+    let log_file = match utils::app_dir(AppDataType::UserData) {
         Ok(file) => file.join("ytinu.log"),
         Err(err) => {
             error = Some(err);
@@ -65,28 +72,69 @@ fn setup_logging() {
     }
 }
 
+fn launch_ui(app: Arc<Mutex<App>>, server_handle: ServerHandle, port: u16) {
+    let ui_mode = app
+        .lock()
+        .unwrap_or_die("App::lock() failed")
+        .config()
+        .open_ui;
+
+    match ui_mode {
+        OpenUIConfig::Chromium => {
+            let ui = UIBuilder::new()
+                .content(Content::Url(&format!("http://127.0.0.1:{}/", port)))
+                .size(1200, 720)
+                .run()
+                .unwrap_or_die("Startup Error on UIBuilder::run");
+
+            ui.wait_finish();
+            log::info!("UI closed. Waiting for server to stop...");
+            server::stop();
+        }
+        OpenUIConfig::Browser => {
+            if let Err(error) = webbrowser::open(&format!("http://127.0.0.1:{}/", port)) {
+                crate::show_error(&format!("Failed to launch browser: {}", error));
+            }
+        }
+        OpenUIConfig::None => (),
+    }
+
+    server_handle.join()
+}
+
 fn main() {
     setup_panic_hook();
     setup_logging();
 
-    let app = App::start();
-    let (server_handle, port) = server::start(app);
+    let ui_mode = parse_args();
+
+    let app = App::start(ui_mode);
+    let (server_handle, port) = server::start(Arc::clone(&app));
 
     log::info!("Started server on localhost:{}", port);
 
-    let no_ui = std::env::args().any(|a| a.as_str() == "--no-ui");
+    launch_ui(Arc::clone(&app), server_handle, port);
 
-    if no_ui {
-        server_handle.join();
+    let app = app.lock();
+    if let Ok(app) = app {
+        app.remove_old_version();
+    }
+}
+
+fn parse_args() -> Option<OpenUIConfig> {
+    let mut args_iter = std::env::args();
+    if args_iter.any(|a| a.as_str() == "--ui") {
+        let mode = match args_iter.next().as_deref() {
+            Some("chromium") => OpenUIConfig::Chromium,
+            Some("browser") => OpenUIConfig::Browser,
+            Some("none") => OpenUIConfig::None,
+            _ => {
+                crate::show_error("Invalid arguments. Usage: ytinu [--ui chromium|browser|none]");
+                std::process::exit(-1);
+            }
+        };
+        Some(mode)
     } else {
-        let ui = UIBuilder::new()
-            .content(Content::Url(&format!("http://127.0.0.1:{}/", port)))
-            .size(1200, 720)
-            .run()
-            .unwrap_or_die("Startup Error on UIBuilder::run");
-
-        ui.wait_finish();
-        log::info!("UI closed. Waiting for server to stop...");
-        server_handle.stop();
+        None
     }
 }

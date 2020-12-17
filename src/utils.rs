@@ -7,6 +7,7 @@ use std::{
 
 use alcro::dialog;
 use anyhow::{bail, Context};
+use app_dirs::AppDataType;
 
 pub trait ErrorExt {
     type R;
@@ -44,16 +45,12 @@ pub fn show_error(msg: &str) {
     dialog::message_box_ok("Error", msg, dialog::MessageBoxIcon::Error);
 }
 
-pub fn data_root() -> Result<PathBuf, app_dirs::AppDirsError> {
-    app_dirs::data_root(app_dirs::AppDataType::UserData).and_then(|path| {
+pub fn app_dir(dir_type: AppDataType) -> Result<PathBuf, app_dirs::AppDirsError> {
+    app_dirs::data_root(dir_type).and_then(|path| {
         let path = path.join("ytinu");
         std::fs::create_dir_all(&path)?;
         Ok(path)
     })
-}
-
-pub fn data_root_unwrap() -> PathBuf {
-    data_root().unwrap_or_die("Startup error: Failed to get data path")
 }
 
 pub fn checksum(path: &Path) -> Result<String, std::io::Error> {

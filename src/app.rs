@@ -2,15 +2,18 @@ use std::{
     collections::HashMap,
     fs::File,
     path::PathBuf,
+    process::Command,
     sync::{Arc, Mutex},
 };
 
-use alcro::dialog::{self, MessageBoxIcon, YesNo};
-use rouille::{RequestBody, Response};
+use alcro::dialog::{self, MessageBoxIcon, YesNo::*};
+use anyhow::Context;
+use app_dirs::AppDataType;
+use rouille::{Request, Response};
 use semver::Version;
 use serde::de::DeserializeOwned;
 
-use crate::data::*;
+use crate::{data::*, ErrorExt, APP_VERSION};
 
 pub static METADATA_URL: &str =
     "https://raw.githubusercontent.com/ytinu-mods/meta/master/meta.json";
@@ -36,11 +39,14 @@ pub struct App {
     data_path: PathBuf,
     metadata: Option<Metadata>,
     state: State,
+    config: Config,
 }
 
 impl App {
-    pub fn start() -> Arc<Mutex<Self>> {
-        let data_path = crate::data_root_unwrap().join("data.json");
+    pub fn start(ui_mode: Option<OpenUIConfig>) -> Arc<Mutex<Self>> {
+        let data_path = crate::utils::app_dir(AppDataType::UserData)
+            .unwrap_or_die("Startup error: Failed to get data directory")
+            .join("data.json");
         log::info!("Using data file at: '{}'", data_path.to_string_lossy());
 
         let state: State = File::open(&data_path)
@@ -60,28 +66,29 @@ impl App {
             });
 
         let metadata = fetch_metadata();
+        let mut config = Config::load();
+        if let Some(ui_mode) = ui_mode {
+            config.open_ui = ui_mode;
+        }
+
         let mut app = App {
             data_path,
             metadata,
             state,
+            config,
         };
 
-        app.try_ensure_game_selected();
+        if app.config.check_for_updates {
+            app.check_for_updates();
+        }
         app.show_messages();
+        app.try_ensure_game_selected();
         app.store_state();
 
         Arc::new(Mutex::new(app))
     }
 
-    pub fn server_port(&self) -> u16 {
-        if cfg!(debug_assertions) {
-            5001
-        } else {
-            0
-        }
-    }
-
-    pub fn handle(&mut self, path: &str, body: Option<RequestBody>) -> Result<Response, String> {
+    pub fn handle(&mut self, path: &str, request: &Request) -> Result<Response, String> {
         match path {
             "find_game_directory" => Ok(Response::json(&self.metadata.as_ref().map(|meta| {
                 meta.games
@@ -90,16 +97,13 @@ impl App {
             }))),
             "browse_directory" => Ok(Response::json(&alcro::dialog::select_folder_dialog(
                 "Browse directory",
-                self.state
-                    .current_game()
-                    .map(|g| g.install_path.as_str())
-                    .unwrap_or(""),
+                &request.get_param("path").unwrap_or_default(),
             ))),
             "update_install_path" => self
-                .update_install_path(parse_request_body(body)?)
+                .update_install_path(parse_request_body(request)?)
                 .map(|()| Response::json(&true)),
             "add_game" => self
-                .add_game(parse_request_body(body)?)
+                .add_game(parse_request_body(request)?)
                 .map(|()| Response::json(&true)),
             "state" => Ok(Response::json(&StateOut::new(&self.state))),
             "metadata" => Ok(Response::json(
@@ -119,6 +123,21 @@ impl App {
                 self.store_state();
                 Ok(Response::empty_204())
             }
+            "update" => {
+                self.check_for_updates();
+                Ok(Response::empty_204())
+            }
+            "shutdown" => {
+                crate::server::stop();
+                Ok(Response::empty_204())
+            }
+            "get_config" => Ok(Response::json(&self.config)),
+            "set_config" => parse_request_body(request)
+                .map(|config| {
+                    self.config = config;
+                    self.config.store();
+                })
+                .map(|()| Response::json(&true)),
             _ => {
                 if let Some(dir) = path.strip_prefix("open/") {
                     self.state.open_dir(dir);
@@ -156,6 +175,153 @@ impl App {
                     Err(format!("Invalid API endpoint: {}", path))
                 }
             }
+        }
+    }
+
+    fn check_for_updates(&self) {
+        if let Some(meta) = self.metadata.as_ref() {
+            if meta.version > crate::APP_VERSION {
+                log::info!(
+                    "Update available. Installed version: {}. Latest version: {}",
+                    APP_VERSION,
+                    meta.version
+                );
+                let choice = dialog::message_box_yes_no(
+                    "Update available",
+                    &format!(
+                        "A new version of ytinu is available:\n\n\
+                         Installed version: {}\n\
+                         Latest version:    {}\n\
+                         \n\
+                         Do you want to update?",
+                        APP_VERSION, meta.version
+                    ),
+                    MessageBoxIcon::Question,
+                    No,
+                );
+
+                if choice == Yes {
+                    match meta.downloads.get(std::env::consts::OS) {
+                        Some(url) => {
+                            if let Err(error) = self.install_update(url) {
+                                crate::show_error(&format!(
+                                    "Failed to install update: {:#}",
+                                    error
+                                ));
+                            }
+                        }
+                        None => crate::show_error(&format!(
+                            "No update url for OS: '{}'",
+                            std::env::consts::OS
+                        )),
+                    }
+                }
+                return;
+            }
+        }
+
+        self.remove_old_version();
+    }
+
+    fn install_update(&self, url: &str) -> anyhow::Result<()> {
+        let exe_path =
+            std::env::current_exe().context("Failed to get location of ytinu installation")?;
+        let exe_dir = exe_path
+            .parent()
+            .context("Failed to get directory of ytinu installation")?;
+
+        let tmp_path_new = exe_dir.join("ytinu_new");
+        crate::utils::download(url, &tmp_path_new)?;
+
+        let tmp_path_old = exe_dir.join("ytinu_old");
+        std::fs::rename(&exe_path, &tmp_path_old).context("Failed to remove current version")?;
+
+        if let Err(error) = std::fs::rename(&tmp_path_new, &exe_path) {
+            log::error!(
+                "Failed to move new version into place: {}. Trying to restore current version.",
+                error
+            );
+            dialog::message_box_ok(
+                "Error during update",
+                &format!(
+                    "Failed to move new version into place: {}.\n\nTrying to restore current version.",
+                    error
+                ),
+                MessageBoxIcon::Error
+            );
+            if let Err(error) = std::fs::rename(&tmp_path_old, &exe_path) {
+                log::error!(
+                    "Failed to restore current version: {}. The backuped version is located at: {}",
+                    error,
+                    &tmp_path_old.to_string_lossy()
+                );
+                dialog::message_box_ok(
+                    "Error during restore",
+                    &format!(
+                        "Failed to resture current version: {}\n\n\
+                         The backuped version is located at: {}\n\n\
+                         You can try to manually replace it with the downloaded latest version at {}.",
+                        error,
+                        tmp_path_old.to_string_lossy(),
+                        tmp_path_new.to_string_lossy()
+                    ),
+                    MessageBoxIcon::Error,
+                );
+                std::process::exit(-1);
+            }
+            if let Err(error) = std::fs::remove_file(&tmp_path_new) {
+                log::error!(
+                    "Failed to remove downloaded new version at '{}': {}",
+                    tmp_path_new.to_string_lossy(),
+                    error
+                );
+            }
+        } else {
+            #[cfg(not(windows))]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Err(error) = std::fs::metadata(&exe_path).and_then(|meta| {
+                    let mut perms = meta.permissions();
+                    perms.set_mode(0o755);
+                    std::fs::set_permissions(&exe_path, perms)
+                }) {
+                    log::warn!("Sucessfully downloaded and replaced binary but failed to make it executable: {}", error);
+                    dialog::message_box_ok("Update partially sucessful", 
+                    "Sucessfully downloaded and replaced ytinu but failed to make the new version executable. Please adjust the permissions manually and restart ytinu.", MessageBoxIcon::Info);
+                    std::process::exit(-1);
+                }
+            }
+            log::info!("Successfully updated and replaced executable. Restarting...");
+            if let Err(error) = Command::new(exe_path).args(std::env::args()).spawn() {
+                log::warn!("Failed to start new process: {}", error);
+                dialog::message_box_ok("Update sucessful but failed to restart", "The update was sucessfully installed but ytinu was not able to restart itself automatically. Please start it again manually.", MessageBoxIcon::Info);
+            }
+            std::process::exit(0);
+        }
+
+        Ok(())
+    }
+
+    pub fn remove_old_version(&self) {
+        let run = || -> anyhow::Result<()> {
+            let path = std::env::current_exe()
+                .context("Failed to get location of ytinu installation")?
+                .parent()
+                .context("Failed to get directory of ytinu installation")?
+                .join("ytinu_old");
+
+            if path.is_file() {
+                log::info!(
+                    "Found old leftover ytinu executable at '{}'. Removing...",
+                    path.to_string_lossy()
+                );
+                std::fs::remove_file(path).context("Failed to remove file")?;
+            }
+            Ok(())
+        };
+        log::info!("Checking for old leftover ytinu executables");
+        if let Err(error) = run() {
+            log::warn!("Failed to check or remove old ytinu exexcutable: {}", error);
         }
     }
 
@@ -341,9 +507,9 @@ impl App {
                         "Failed to backup data.json",
                         "Failed to backup data.json. Do you want to try and overwrite it anyway?",
                         MessageBoxIcon::Error,
-                        YesNo::No,
+                        No,
                     );
-                    if choice == YesNo::No {
+                    if choice == No {
                         log::info!("User chose to NOT overwrite data.json");
                         return Err(());
                     }
@@ -355,16 +521,23 @@ impl App {
         }
         Ok(None)
     }
+
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
 }
 
 impl Drop for App {
     fn drop(&mut self) {
         self.store_state();
+        self.config.store();
     }
 }
 
-fn parse_request_body<T: DeserializeOwned>(body: Option<RequestBody>) -> Result<T, String> {
-    let body = body.ok_or_else(|| "Missing Request body".to_string())?;
+fn parse_request_body<T: DeserializeOwned>(request: &Request) -> Result<T, String> {
+    let body = request
+        .data()
+        .ok_or_else(|| "Missing Request body".to_string())?;
     serde_json::from_reader(body).map_err(|e| format!("Failed to parse request body: {}", e))
 }
 

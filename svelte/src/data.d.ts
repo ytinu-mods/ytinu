@@ -48,3 +48,10 @@ interface Metadata {
   game_mods: { [id: string]: { [id: string]: Mod } };
   mods: { [id: string]: Mod };
 }
+
+interface Config {
+  dark_mode: 'system' | 'dark' | 'light';
+  show_dev_mods: boolean;
+  check_for_updates: boolean;
+  open_ui: 'chromium' | 'browser' | 'none';
+}

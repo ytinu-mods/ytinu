@@ -18,7 +18,11 @@ static STOP_SERVER: AtomicBool = AtomicBool::new(false);
 struct Asset;
 
 fn run(app: Arc<Mutex<App>>, port_tx: std::sync::mpsc::Sender<u16>) {
-    let port = app.lock().unwrap_or_die("App::lock() failed").server_port();
+    let port = if cfg!(debug_assertions) {
+        5001
+    } else {
+        app.lock().unwrap_or_die("App::lock() failed").config().port
+    };
     let server = Server::new(("127.0.0.1", port), move |request| {
         let path = request.url();
 
@@ -28,7 +32,7 @@ fn run(app: Arc<Mutex<App>>, port_tx: std::sync::mpsc::Sender<u16>) {
             "index.html"
         } else if let Some(path) = path.strip_prefix("/api/") {
             let mut app = app.lock().unwrap_or_die("App::lock() failed");
-            match app.handle(path, request.data()) {
+            match app.handle(path, request) {
                 Ok(response) => return add_cors(response),
                 Err(error) => return add_cors(Response::json(&APIErrorResponse::new(error))),
             }
@@ -81,12 +85,11 @@ pub fn start(app: Arc<Mutex<App>>) -> (ServerHandle, u16) {
     (ServerHandle(handle), port)
 }
 
-impl ServerHandle {
-    pub fn stop(self: ServerHandle) {
-        STOP_SERVER.store(true, Ordering::SeqCst);
-        self.join();
-    }
+pub fn stop() {
+    STOP_SERVER.store(true, Ordering::SeqCst);
+}
 
+impl ServerHandle {
     pub fn join(self: ServerHandle) {
         if let Err(error) = self.0.join() {
             log::error!("Error while joining server thread: {:?}", error);

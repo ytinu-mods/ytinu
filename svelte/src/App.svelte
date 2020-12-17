@@ -13,10 +13,7 @@
 	let selectedGameId = null;
 	let selectedGame: SetupGame = null;
 	let os = null;
-	let settings: {
-		dark_mode?: "system" | "dark" | "light";
-		show_dev_mods?: boolean;
-	} = {};
+	let settings: Config = null;
 	let installed_mods: InstalledMod[] = [];
 	let recommended_mods: Mod[] = [];
 	let available_mods: Mod[] = [];
@@ -96,22 +93,29 @@
 				}
 				meta = r as Metadata;
 				updateModList();
-				// TODO: Use meta.update
 			});
 	}
 
 	function loadSettings() {
-		settings = JSON.parse(localStorage.getItem("settings")) || {};
-
-		if (
-			settings?.dark_mode === "dark" ||
-			(settings?.dark_mode !== "light" &&
-				window.matchMedia?.("(prefers-color-scheme: dark)").matches)
-		) {
-			document.documentElement.setAttribute("data-theme", "dark");
-		} else {
-			document.documentElement.setAttribute("data-theme", "light");
-		}
+		fetch(API_BASE + "get_config")
+			.then((r) => r.json())
+			.then((r) => {
+				if (r === null || r.error !== undefined) return;
+				settings = r;
+				if (
+					settings?.dark_mode === "dark" ||
+					(settings?.dark_mode !== "light" &&
+						window.matchMedia?.("(prefers-color-scheme: dark)")
+							.matches)
+				) {
+					document.documentElement.setAttribute("data-theme", "dark");
+				} else {
+					document.documentElement.setAttribute(
+						"data-theme",
+						"light"
+					);
+				}
+			});
 	}
 
 	function handleClickInstall() {
@@ -137,6 +141,10 @@
 	function uninstallMod(id: string) {
 		fetch(API_BASE + "remove_mod/" + id).then(() => fetchState());
 	}
+
+	function shutdown() {
+		fetch(API_BASE + "shutdown").then(() => window.close());
+	}
 </script>
 
 <style lang="scss">
@@ -155,9 +163,12 @@
 		<button type="button" on:click={() => (showAboutDialog = true)}>
 			About
 		</button>
+		{#if settings?.open_ui === 'none' || settings?.open_ui === 'browser'}
+			<button type="button" on:click={shutdown}> Shutdown server </button>
+		{/if}
 	</div>
 
-	{#if !version || !meta}
+	{#if !version || !meta || !settings}
 		<div class="spinner-container" transition:fade>
 			<div class="lds-hourglass" />
 		</div>
@@ -325,15 +336,17 @@
 {#if showAboutDialog}
 	<AboutDialog
 		{version}
+		latest_version={meta?.version}
 		onClose={() => {
 			showAboutDialog = false;
 		}} />
 {/if}
 
-{#if showSettingsDialog}
+{#if showSettingsDialog && settings}
 	<SettingsDialog
-		onClose={() => {
+		{settings}
+		onClose={(change) => {
 			showSettingsDialog = false;
-			loadSettings();
+			if (change) loadSettings();
 		}} />
 {/if}

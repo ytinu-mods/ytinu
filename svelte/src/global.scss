@@ -71,11 +71,14 @@ textarea {
   outline: none;
 }
 
-select {
+select,
+input[type='checkbox'] {
   &:not(:disabled) {
     cursor: pointer;
   }
+}
 
+select {
   option {
     background-color: var(--color-select-option-bg);
   }
