@@ -22,7 +22,7 @@ at `%appdata%\ytinu\config.json` (i.e. `C:\Users\<user>\AppData\Roaming\ytinu\co
 or at `$HOME/Library/Application Support/ytinu/config.json` on MacOS
 or at `$HOME/.config/ytinu/config.json` on other Unix systems and add the following:
 
-```json
+```jsonc
 {
     "open_ui": "browser"
 }
@@ -33,7 +33,7 @@ This will attempt to automatically open ytinu in your default browser on startup
 Alternatively you can just launch the ytinu web server part, fixate the port on which it is opened and
 use your own methods to view the UI. To do this change your configuration to this:
 
-```json
+```jsonc
 {
     "open_ui": "none",
     "port": 1337        // Port on which ytinu should serve it's UI
