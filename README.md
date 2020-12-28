@@ -4,6 +4,8 @@ A Mod Manager for Unity Mods using the [BepInEx](https://github.com/BepInEx/BepI
 
 ## How to use
 
+Either watch this video or follow the instructions below.
+
 [![Video with installation instructions](https://img.youtube.com/vi/2VjVBvPL5d8/0.jpg)](https://www.youtube.com/watch?v=2VjVBvPL5d8)
 
 1. Download the the correct ytinu version for your operating system:
