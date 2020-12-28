@@ -4,6 +4,8 @@ A Mod Manager for Unity Mods using the [BepInEx](https://github.com/BepInEx/BepI
 
 ## How to use
 
+[![Video with installation instructions](https://img.youtube.com/vi/2VjVBvPL5d8/0.jpg)](https://www.youtube.com/watch?v=2VjVBvPL5d8)
+
 1. Download the the correct ytinu version for your operating system:
    - Windows: https://github.com/ytinu-mods/ytinu/releases/download/v0.1.0/ytinu.exe
    - Linux: https://github.com/ytinu-mods/ytinu/releases/download/v0.1.0/ytinu (**Note**: The Linux version is still untested and has some known issues. In particular, you need to follow the instructions listed [here](https://bepinex.github.io/bepinex_docs/v5.3/articles/advanced/steam_interop.html#2-set-up-permissions) after ytinu installed the Mod Loader)
