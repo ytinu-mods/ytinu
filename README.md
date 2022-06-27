@@ -10,7 +10,7 @@ Either watch this video or follow the instructions below.
 
 1. Download the the correct ytinu version for your operating system:
    - Windows: https://github.com/ytinu-mods/ytinu/releases/download/v0.1.0/ytinu.exe
-   - Linux: https://github.com/ytinu-mods/ytinu/releases/download/v0.1.0/ytinu (**Note**: The Linux version is still untested and has some known issues. In particular, you need to follow the instructions listed [here](https://bepinex.github.io/bepinex_docs/v5.3/articles/advanced/steam_interop.html#2-set-up-permissions) after ytinu installed the Mod Loader)
+   - Linux: https://github.com/ytinu-mods/ytinu/releases/download/v0.1.0/ytinu (**Note**: The Linux version is still untested and has some known issues. In particular, after ytinu installed the Mod Loader, you need to follow the instructions listed [here](https://docs.bepinex.dev/articles/advanced/steam_interop.html#2-set-up-permissions) if you're playing on Steam or do step 3 from [here](https://docs.bepinex.dev/articles/user_guide/installation/index.html?tabs=tabid-nix#installing-bepinex-1) if otherwise.)
    - MacOS: There currently aren't any pre-built executables for MacOS. Sorry! You can either compile ytinu yourself or install mods manually. 
 2. Run the downloaded executable.
 
